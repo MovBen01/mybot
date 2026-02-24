@@ -274,7 +274,7 @@ async def cb_contact(callback: types.CallbackQuery):
 
 
 # Обработка всех остальных сообщений — пересылка администраторам
-@dp.message()
+@dp.message(F.text[0] != "/")
 async def handle_user_message(message: types.Message):
     await db.log_message(message.from_user.id, message.text or "[медиа]", "user")
     await db.save_user(message.from_user.id, message.from_user.username, message.from_user.full_name)
