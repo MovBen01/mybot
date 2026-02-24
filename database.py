@@ -184,20 +184,27 @@ class Database:
             """, (product_id,)).fetchone()
             return dict(row) if row else None
 
-    def search_products(self, query: str) -> List[Dict]:
+    def search_products(self, query: str = "", price_from: float = None, price_to: float = None) -> List[Dict]:
         with self._conn() as conn:
-            rows = conn.execute("""
+            sql = """
                 SELECT p.*, c.name as category_name, c.markup_percent,
                        ROUND(p.original_price * (1 + c.markup_percent/100)) as price_with_markup
                 FROM products p
                 JOIN categories c ON p.category_id = c.id
-                WHERE p.is_available=1 AND (
-                    LOWER(p.name) LIKE LOWER(?) OR
-                    LOWER(p.description) LIKE LOWER(?)
-                )
-                ORDER BY p.name
-                LIMIT 20
-            """, (f"%{query}%", f"%{query}%")).fetchall()
+                WHERE p.is_available=1
+            """
+            params = []
+            if query:
+                sql += " AND (LOWER(p.name) LIKE LOWER(?) OR LOWER(p.description) LIKE LOWER(?))"
+                params += [f"%{query}%", f"%{query}%"]
+            if price_from:
+                sql += " AND ROUND(p.original_price * (1 + c.markup_percent/100)) >= ?"
+                params.append(price_from)
+            if price_to:
+                sql += " AND ROUND(p.original_price * (1 + c.markup_percent/100)) <= ?"
+                params.append(price_to)
+            sql += " ORDER BY price_with_markup LIMIT 100"
+            rows = conn.execute(sql, params).fetchall()
             return [dict(r) for r in rows]
 
     def get_all_products(self) -> List[Dict]:
