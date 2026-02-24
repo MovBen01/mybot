@@ -309,12 +309,15 @@ async def handle_user_message(message: types.Message):
     )
 
 
+# Глобальный парсер — доступен из admin.py
+parser = TelegramParser(bot, channel_poster, product_manager)
+
+
 async def main():
     # Инициализация БД
     db.init()
 
     # Запуск парсера в фоне
-    parser = TelegramParser(bot, channel_poster, product_manager)
     asyncio.create_task(parser.start_monitoring())
 
     logger.info("Bot started!")
