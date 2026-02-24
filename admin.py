@@ -411,3 +411,21 @@ async def adm_back(callback: types.CallbackQuery):
         parse_mode="HTML",
         reply_markup=admin_keyboard()
     )
+
+
+# ---- ПРИНУДИТЕЛЬНЫЙ ПОСТИНГ ----
+
+@admin_router.message(Command("post_now"))
+async def cmd_post_now(message: types.Message):
+    if not is_admin(message.from_user.id):
+        return
+    await message.answer("⏳ Парсю канал и готовлю прайс-лист...")
+    try:
+        from bot import bot as main_bot, channel_poster as main_poster, product_manager as pm
+        from parser import TelegramWebParser
+        parser = TelegramWebParser(main_bot, main_poster, pm)
+        await parser._fetch_and_save()
+        await parser._post_price_list()
+        await message.answer("✅ Прайс-лист опубликован в канал!")
+    except Exception as e:
+        await message.answer(f"❌ Ошибка: {e}")
