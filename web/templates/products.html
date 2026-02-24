@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}Товары{% endblock %}
+{% block page_title %}Товары{% endblock %}
+{% block topbar_actions %}
+  <button class="btn btn-primary" onclick="openModal('modal-add')">+ Добавить товар</button>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Каталог товаров</span>
+    <input id="search" type="text" placeholder="Поиск..." style="width:200px;margin:0;" oninput="filterTable()">
+  </div>
+  <div class="table-wrap">
+    <table id="products-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Название</th>
+          <th>Категория</th>
+          <th>Закупка</th>
+          <th>Наценка</th>
+          <th>Продажная цена</th>
+          <th>Статус</th>
+          <th>Действия</th>
+        </tr>
+      </thead>
+      <tbody id="products-body">
+        <tr><td colspan="8"><div class="spinner"></div></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- MODAL ADD -->
+<div class="modal-overlay" id="modal-add">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Добавить товар</span>
+      <button class="modal-close" onclick="closeModal('modal-add')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Название товара *</label>
+        <input type="text" id="add-name" placeholder="Например: iPhone 15 Pro 256GB">
+      </div>
+      <div class="form-group">
+        <label>Закупочная цена (₽) *</label>
+        <input type="number" id="add-price" placeholder="5000">
+      </div>
+      <div class="form-group">
+        <label>Категория *</label>
+        <select id="add-category"></select>
+      </div>
+      <div class="form-group">
+        <label>Описание</label>
+        <textarea id="add-desc" placeholder="Краткое описание товара..."></textarea>
+      </div>
+      <div style="padding:12px;background:var(--surface2);border-radius:4px;font-size:12px;color:var(--text2)">
+        💡 Цена продажи рассчитается автоматически по наценке категории
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-add')">Отмена</button>
+      <button class="btn btn-primary" onclick="addProduct()">Добавить товар</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allProducts = [];
+
+async function loadProducts() {
+  const [products, categories] = await Promise.all([
+    api('/api/products'),
+    api('/api/categories')
+  ]);
+  allProducts = products;
+
+  // Populate category select
+  const sel = document.getElementById('add-category');
+  sel.innerHTML = categories.map(c => `<option value="${c.name}">${c.name} (+${c.markup_percent}%)</option>`).join('');
+
+  renderTable(products);
+}
+
+function renderTable(products) {
+  const tbody = document.getElementById('products-body');
+  if (!products.length) {
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="icon">▦</div><p>Товаров нет. Добавьте первый!</p></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = products.map(p => `
+    <tr>
+      <td><code>${p.id}</code></td>
+      <td><b>${p.name}</b>${p.description ? `<br><span style="color:var(--text3);font-size:11px;">${p.description.substring(0,50)}</span>` : ''}</td>
+      <td><span class="badge badge-cyan">${p.category_name}</span></td>
+      <td style="color:var(--text2)">${p.original_price ? p.original_price + '₽' : '—'}</td>
+      <td style="color:var(--warning)">${p.markup_percent}%</td>
+      <td><b style="color:var(--success)">${p.price_with_markup}₽</b></td>
+      <td><span class="badge ${p.is_available ? 'badge-green' : 'badge-red'}">${p.is_available ? 'Активен' : 'Скрыт'}</span></td>
+      <td>
+        <button class="btn btn-sm btn-danger" onclick="deleteProduct(${p.id}, this)">Удалить</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function filterTable() {
+  const q = document.getElementById('search').value.toLowerCase();
+  const filtered = allProducts.filter(p =>
+    p.name.toLowerCase().includes(q) ||
+    p.category_name.toLowerCase().includes(q)
+  );
+  renderTable(filtered);
+}
+
+async function addProduct() {
+  const name = document.getElementById('add-name').value.trim();
+  const price = document.getElementById('add-price').value;
+  const category = document.getElementById('add-category').value;
+  const desc = document.getElementById('add-desc').value.trim();
+
+  if (!name || !price || !category) {
+    toast('Заполните обязательные поля', 'error');
+    return;
+  }
+
+  const result = await api('/api/products', 'POST', { name, price, category, description: desc || null });
+  if (result.id) {
+    toast('✓ Товар добавлен!');
+    closeModal('modal-add');
+    document.getElementById('add-name').value = '';
+    document.getElementById('add-price').value = '';
+    document.getElementById('add-desc').value = '';
+    loadProducts();
+  } else {
+    toast('Ошибка добавления', 'error');
+  }
+}
+
+async function deleteProduct(id, btn) {
+  if (!confirm('Скрыть этот товар?')) return;
+  btn.disabled = true;
+  btn.textContent = '...';
+  await api(`/api/products/${id}`, 'DELETE');
+  toast('Товар скрыт');
+  loadProducts();
+}
+
+loadProducts();
+</script>
+{% endblock %}

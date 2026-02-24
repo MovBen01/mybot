@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Дашборд{% endblock %}
+{% block page_title %}Дашборд{% endblock %}
+
+{% block content %}
+<div class="stats-grid" id="stats-grid">
+  <div class="card"><div class="card-body"><div class="spinner"></div></div></div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Последние заказы</span>
+      <a href="/orders" class="btn btn-sm">Все →</a>
+    </div>
+    <div class="table-wrap" id="recent-orders">
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Товары по категориям</span>
+    </div>
+    <div class="card-body" id="cats-chart">
+      <div class="spinner"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadDashboard() {
+  const data = await api('/api/stats');
+
+  // Stats
+  const statsGrid = document.getElementById('stats-grid');
+  statsGrid.innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Пользователи</div>
+      <div class="stat-value">${data.users}</div>
+      <div class="stat-sub">зарегистрировано в боте</div>
+    </div>
+    <div class="stat-card success">
+      <div class="stat-label">Товаров</div>
+      <div class="stat-value">${data.products}</div>
+      <div class="stat-sub">в каталоге</div>
+    </div>
+    <div class="stat-card warning">
+      <div class="stat-label">Заказов</div>
+      <div class="stat-value">${data.orders}</div>
+      <div class="stat-sub">запросов от клиентов</div>
+    </div>
+    <div class="stat-card danger">
+      <div class="stat-label">Сообщений</div>
+      <div class="stat-value">${data.messages}</div>
+      <div class="stat-sub">в переписках</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Категорий</div>
+      <div class="stat-value">${data.categories}</div>
+      <div class="stat-sub">товарных групп</div>
+    </div>
+  `;
+
+  // Recent orders
+  const ordersEl = document.getElementById('recent-orders');
+  if (data.recent_orders && data.recent_orders.length > 0) {
+    const rows = data.recent_orders.map(o => `
+      <tr>
+        <td><code>#${o.id}</code></td>
+        <td>${o.full_name || o.username || `ID:${o.user_id}`}</td>
+        <td>${(o.product_name || '—').substring(0,30)}</td>
+        <td><span class="badge badge-cyan">${o.price}₽</span></td>
+        <td><span class="badge ${o.status === 'pending' ? 'badge-yellow' : 'badge-green'}">${o.status}</span></td>
+      </tr>
+    `).join('');
+    ordersEl.innerHTML = `<table><thead><tr><th>#</th><th>Клиент</th><th>Товар</th><th>Цена</th><th>Статус</th></tr></thead><tbody>${rows}</tbody></table>`;
+  } else {
+    ordersEl.innerHTML = '<div class="empty-state"><div class="icon">◎</div><p>Заказов пока нет</p></div>';
+  }
+
+  // Categories breakdown
+  const catsEl = document.getElementById('cats-chart');
+  const cats = data.cats_breakdown || {};
+  const total = Object.values(cats).reduce((a, b) => a + b, 0) || 1;
+  const colors = ['#22d3ee', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6', '#ec4899'];
+  const bars = Object.entries(cats).map(([name, count], i) => {
+    const pct = Math.round(count / total * 100);
+    return `
+      <div style="margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px;">
+          <span>${name}</span>
+          <span style="color:var(--text3)">${count} шт · ${pct}%</span>
+        </div>
+        <div style="height:4px;background:var(--border);border-radius:2px;">
+          <div style="height:100%;width:${pct}%;background:${colors[i % colors.length]};border-radius:2px;transition:width 0.6s;"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  catsEl.innerHTML = bars || '<p style="color:var(--text3);font-size:12px;">Нет данных</p>';
+}
+
+loadDashboard();
+</script>
+{% endblock %}

@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}Admin{% endblock %} — ResellerBot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Unbounded:wght@300;400;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0b;
+    --surface: #111113;
+    --surface2: #18181b;
+    --border: #27272a;
+    --border2: #3f3f46;
+    --accent: #22d3ee;
+    --accent2: #0891b2;
+    --danger: #f43f5e;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --text: #fafafa;
+    --text2: #a1a1aa;
+    --text3: #52525b;
+    --mono: 'Space Mono', monospace;
+    --display: 'Unbounded', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--mono);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+  }
+
+  /* SIDEBAR */
+  .sidebar {
+    width: 240px;
+    min-height: 100vh;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    left: 0; top: 0; bottom: 0;
+    z-index: 100;
+  }
+
+  .sidebar-logo {
+    padding: 24px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar-logo .logo-text {
+    font-family: var(--display);
+    font-size: 13px;
+    font-weight: 900;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+  .sidebar-logo .logo-sub {
+    font-size: 10px;
+    color: var(--text3);
+    margin-top: 4px;
+    letter-spacing: 0.15em;
+  }
+
+  .sidebar-nav { padding: 16px 0; flex: 1; }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 20px;
+    color: var(--text2);
+    text-decoration: none;
+    font-size: 12px;
+    letter-spacing: 0.05em;
+    transition: all 0.15s;
+    border-left: 2px solid transparent;
+  }
+  .nav-item:hover { color: var(--text); background: var(--surface2); }
+  .nav-item.active { color: var(--accent); border-left-color: var(--accent); background: rgba(34,211,238,0.06); }
+  .nav-item .icon { font-size: 16px; width: 20px; text-align: center; }
+
+  .sidebar-footer {
+    padding: 16px 20px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--text3);
+  }
+  .sidebar-footer a { color: var(--danger); text-decoration: none; }
+  .sidebar-footer a:hover { text-decoration: underline; }
+
+  /* MAIN */
+  .main {
+    margin-left: 240px;
+    flex: 1;
+    min-height: 100vh;
+  }
+
+  .topbar {
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+  .page-title {
+    font-family: var(--display);
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .topbar-actions { display: flex; gap: 12px; }
+
+  .content { padding: 32px; }
+
+  /* COMPONENTS */
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 18px;
+    font-family: var(--mono); font-size: 12px;
+    border: 1px solid var(--border2);
+    background: var(--surface2);
+    color: var(--text);
+    cursor: pointer; border-radius: 4px;
+    transition: all 0.15s; letter-spacing: 0.05em;
+    text-decoration: none;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 700; }
+  .btn-primary:hover { background: var(--accent2); border-color: var(--accent2); color: #000; }
+  .btn-danger { border-color: var(--danger); color: var(--danger); }
+  .btn-danger:hover { background: var(--danger); color: #fff; }
+  .btn-sm { padding: 5px 10px; font-size: 11px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .card-title { font-family: var(--display); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text2); }
+  .card-body { padding: 20px; }
+
+  /* STATS GRID */
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 32px; }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 20px;
+    border-radius: 6px;
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 2px;
+    background: var(--accent);
+  }
+  .stat-card.danger::before { background: var(--danger); }
+  .stat-card.success::before { background: var(--success); }
+  .stat-card.warning::before { background: var(--warning); }
+  .stat-label { font-size: 10px; letter-spacing: 0.15em; color: var(--text3); text-transform: uppercase; }
+  .stat-value { font-family: var(--display); font-size: 32px; font-weight: 900; margin-top: 8px; color: var(--text); }
+  .stat-sub { font-size: 11px; color: var(--text3); margin-top: 4px; }
+
+  /* TABLE */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th {
+    padding: 10px 16px; text-align: left;
+    font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--text3); border-bottom: 1px solid var(--border);
+    font-weight: 400;
+  }
+  td { padding: 12px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface2); }
+
+  .badge {
+    display: inline-block; padding: 3px 8px;
+    font-size: 10px; letter-spacing: 0.08em;
+    border-radius: 3px; font-weight: 700;
+  }
+  .badge-cyan { background: rgba(34,211,238,0.15); color: var(--accent); }
+  .badge-green { background: rgba(16,185,129,0.15); color: var(--success); }
+  .badge-red { background: rgba(244,63,94,0.15); color: var(--danger); }
+  .badge-yellow { background: rgba(245,158,11,0.15); color: var(--warning); }
+
+  /* FORM */
+  .form-group { margin-bottom: 16px; }
+  label { display: block; font-size: 11px; letter-spacing: 0.1em; color: var(--text2); margin-bottom: 6px; text-transform: uppercase; }
+  input, select, textarea {
+    width: 100%; padding: 10px 12px;
+    background: var(--surface2); border: 1px solid var(--border2);
+    color: var(--text); font-family: var(--mono); font-size: 13px;
+    border-radius: 4px; outline: none; transition: border-color 0.15s;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  textarea { min-height: 80px; resize: vertical; }
+  select option { background: var(--surface2); }
+
+  /* MODAL */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+    z-index: 1000; align-items: center; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border2);
+    border-radius: 8px; width: 480px; max-width: 95vw;
+    max-height: 90vh; overflow-y: auto;
+    animation: slideIn 0.2s ease;
+  }
+  @keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  .modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .modal-title { font-family: var(--display); font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+  .modal-close { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 20px; line-height: 1; }
+  .modal-close:hover { color: var(--text); }
+  .modal-body { padding: 24px; }
+  .modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; gap: 12px; justify-content: flex-end; }
+
+  /* TOAST */
+  #toast {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--surface2); border: 1px solid var(--border2);
+    padding: 12px 20px; border-radius: 6px;
+    font-size: 13px; z-index: 9999;
+    transform: translateY(80px); opacity: 0;
+    transition: all 0.25s;
+  }
+  #toast.show { transform: translateY(0); opacity: 1; }
+  #toast.success { border-color: var(--success); color: var(--success); }
+  #toast.error { border-color: var(--danger); color: var(--danger); }
+
+  /* LOADING */
+  .spinner {
+    width: 20px; height: 20px;
+    border: 2px solid var(--border2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    margin: 40px auto;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--text3); }
+  .empty-state .icon { font-size: 40px; margin-bottom: 12px; }
+  .empty-state p { font-size: 13px; }
+
+  /* Chat bubbles for messages */
+  .msg-bubble { margin-bottom: 12px; }
+  .msg-bubble .meta { font-size: 10px; color: var(--text3); margin-bottom: 4px; letter-spacing: 0.05em; }
+  .msg-bubble .text {
+    display: inline-block; padding: 8px 14px; border-radius: 6px;
+    font-size: 13px; max-width: 70%;
+  }
+  .msg-bubble.user .text { background: var(--surface2); border: 1px solid var(--border); }
+  .msg-bubble.bot .text { background: rgba(34,211,238,0.1); border: 1px solid rgba(34,211,238,0.2); color: var(--accent); }
+  .msg-bubble.bot { text-align: right; }
+
+  code { font-family: var(--mono); font-size: 11px; background: var(--surface2); padding: 2px 6px; border-radius: 3px; color: var(--accent); }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } .sidebar { display: none; } .main { margin-left: 0; } }
+</style>
+{% block extra_head %}{% endblock %}
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-text">ResellerBot</div>
+    <div class="logo-sub">Admin Panel v1.0</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="/" class="nav-item {% if request.path == '/' %}active{% endif %}">
+      <span class="icon">◈</span> Дашборд
+    </a>
+    <a href="/products" class="nav-item {% if request.path == '/products' %}active{% endif %}">
+      <span class="icon">▦</span> Товары
+    </a>
+    <a href="/categories" class="nav-item {% if request.path == '/categories' %}active{% endif %}">
+      <span class="icon">◉</span> Категории
+    </a>
+    <a href="/orders" class="nav-item {% if request.path == '/orders' %}active{% endif %}">
+      <span class="icon">◎</span> Заказы
+    </a>
+    <a href="/messages" class="nav-item {% if request.path == '/messages' %}active{% endif %}">
+      <span class="icon">◈</span> Переписки
+    </a>
+    <a href="/users" class="nav-item {% if request.path == '/users' %}active{% endif %}">
+      <span class="icon">◇</span> Пользователи
+    </a>
+  </nav>
+  <div class="sidebar-footer">
+    <a href="/logout">→ Выйти</a>
+  </div>
+</aside>
+
+<main class="main">
+  <div class="topbar">
+    <div class="page-title">{% block page_title %}Dashboard{% endblock %}</div>
+    <div class="topbar-actions">{% block topbar_actions %}{% endblock %}</div>
+  </div>
+  <div class="content">
+    {% block content %}{% endblock %}
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+function toast(msg, type = 'success') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show ' + type;
+  setTimeout(() => el.className = '', 2500);
+}
+
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+async function api(url, method = 'GET', data = null) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (data) opts.body = JSON.stringify(data);
+  const res = await fetch(url, opts);
+  return res.json();
+}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

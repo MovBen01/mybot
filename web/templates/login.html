@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Вход — ResellerBot Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Unbounded:wght@700;900&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #0a0a0b; --surface: #111113; --border: #27272a; --border2: #3f3f46;
+    --accent: #22d3ee; --danger: #f43f5e; --text: #fafafa; --text2: #a1a1aa; --text3: #52525b;
+    --mono: 'Space Mono', monospace; --display: 'Unbounded', sans-serif;
+  }
+  body {
+    font-family: var(--mono);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+  /* Grid background */
+  body::before {
+    content: '';
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(34,211,238,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(34,211,238,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  /* Glow */
+  body::after {
+    content: '';
+    position: absolute;
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, rgba(34,211,238,0.06) 0%, transparent 70%);
+    top: 50%; left: 50%; transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+  .login-box {
+    position: relative; z-index: 1;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    padding: 48px;
+    width: 400px;
+    border-radius: 8px;
+  }
+  .login-box::before {
+    content: '';
+    position: absolute; top: 0; left: 40px; right: 40px; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  }
+  .brand {
+    font-family: var(--display);
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+    text-align: center;
+    margin-bottom: 4px;
+  }
+  .brand-sub {
+    font-size: 10px; letter-spacing: 0.2em; color: var(--text3);
+    text-align: center; text-transform: uppercase; margin-bottom: 40px;
+  }
+  label {
+    display: block; font-size: 10px; letter-spacing: 0.15em;
+    color: var(--text3); text-transform: uppercase; margin-bottom: 8px;
+  }
+  input[type=password] {
+    width: 100%; padding: 12px 16px;
+    background: #0a0a0b; border: 1px solid var(--border2);
+    color: var(--text); font-family: var(--mono); font-size: 16px;
+    letter-spacing: 0.2em;
+    border-radius: 4px; outline: none; transition: border-color 0.15s;
+    margin-bottom: 20px;
+  }
+  input[type=password]:focus { border-color: var(--accent); }
+  button {
+    width: 100%; padding: 13px;
+    background: var(--accent); color: #000;
+    font-family: var(--display); font-size: 12px; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    border: none; border-radius: 4px; cursor: pointer;
+    transition: background 0.15s;
+  }
+  button:hover { background: #0891b2; }
+  .error {
+    background: rgba(244,63,94,0.1); border: 1px solid rgba(244,63,94,0.3);
+    color: var(--danger); font-size: 12px; padding: 10px 14px;
+    border-radius: 4px; margin-bottom: 20px; text-align: center;
+  }
+  .hint { text-align: center; margin-top: 20px; font-size: 11px; color: var(--text3); }
+</style>
+</head>
+<body>
+<div class="login-box">
+  <div class="brand">RESELLERBOT</div>
+  <div class="brand-sub">Admin Panel</div>
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <form method="POST">
+    <label>Пароль администратора</label>
+    <input type="password" name="password" placeholder="••••••••" autofocus>
+    <button type="submit">Войти →</button>
+  </form>
+  <div class="hint">Пароль задаётся в .env → WEB_PASSWORD</div>
+</div>
+</body>
+</html>

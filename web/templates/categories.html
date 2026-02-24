@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Категории{% endblock %}
+{% block page_title %}Категории и наценки{% endblock %}
+{% block topbar_actions %}
+  <button class="btn btn-primary" onclick="openModal('modal-add-cat')">+ Добавить категорию</button>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Управление категориями и наценками</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Эмодзи</th>
+          <th>Название</th>
+          <th>Наценка %</th>
+          <th>Пример: цена 1000₽</th>
+          <th>Действие</th>
+        </tr>
+      </thead>
+      <tbody id="cats-body">
+        <tr><td colspan="6"><div class="spinner"></div></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- MODAL ADD -->
+<div class="modal-overlay" id="modal-add-cat">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Новая категория</span>
+      <button class="modal-close" onclick="closeModal('modal-add-cat')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Название *</label>
+        <input type="text" id="cat-name" placeholder="Электроника">
+      </div>
+      <div class="form-group">
+        <label>Эмодзи</label>
+        <input type="text" id="cat-emoji" placeholder="📦" maxlength="4">
+      </div>
+      <div class="form-group">
+        <label>Наценка (%)</label>
+        <input type="number" id="cat-markup" placeholder="15" min="0" max="500">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-add-cat')">Отмена</button>
+      <button class="btn btn-primary" onclick="addCategory()">Создать</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL EDIT MARKUP -->
+<div class="modal-overlay" id="modal-edit-markup">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="edit-cat-title">Изменить наценку</span>
+      <button class="modal-close" onclick="closeModal('modal-edit-markup')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-cat-id">
+      <div class="form-group">
+        <label>Новая наценка (%)</label>
+        <input type="number" id="edit-markup-val" min="0" max="500">
+      </div>
+      <div style="font-size:12px;color:var(--text3);padding:10px 0;">
+        Изменение наценки мгновенно применяется ко всем товарам категории.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-edit-markup')">Отмена</button>
+      <button class="btn btn-primary" onclick="saveMarkup()">Сохранить</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadCategories() {
+  const cats = await api('/api/categories');
+  const tbody = document.getElementById('cats-body');
+  if (!cats.length) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="icon">◉</div><p>Нет категорий</p></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = cats.map(c => `
+    <tr>
+      <td><code>${c.id}</code></td>
+      <td style="font-size:20px">${c.emoji || '📦'}</td>
+      <td><b>${c.name}</b></td>
+      <td>
+        <span class="badge badge-yellow">+${c.markup_percent}%</span>
+      </td>
+      <td style="color:var(--success)">→ ${Math.round(1000 * (1 + c.markup_percent/100))}₽</td>
+      <td>
+        <button class="btn btn-sm" onclick="editMarkup(${c.id}, '${c.name}', ${c.markup_percent})">✏ Наценка</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function editMarkup(id, name, current) {
+  document.getElementById('edit-cat-id').value = id;
+  document.getElementById('edit-cat-title').textContent = `Наценка: ${name}`;
+  document.getElementById('edit-markup-val').value = current;
+  openModal('modal-edit-markup');
+}
+
+async function saveMarkup() {
+  const id = document.getElementById('edit-cat-id').value;
+  const markup = document.getElementById('edit-markup-val').value;
+  await api(`/api/categories/${id}/markup`, 'POST', { markup });
+  toast('✓ Наценка обновлена!');
+  closeModal('modal-edit-markup');
+  loadCategories();
+}
+
+async function addCategory() {
+  const name = document.getElementById('cat-name').value.trim();
+  const emoji = document.getElementById('cat-emoji').value.trim() || '📦';
+  const markup = document.getElementById('cat-markup').value || 15;
+
+  if (!name) { toast('Введите название', 'error'); return; }
+
+  await api('/api/categories', 'POST', { name, emoji, markup });
+  toast('✓ Категория создана!');
+  closeModal('modal-add-cat');
+  document.getElementById('cat-name').value = '';
+  document.getElementById('cat-emoji').value = '';
+  document.getElementById('cat-markup').value = '';
+  loadCategories();
+}
+
+loadCategories();
+</script>
+{% endblock %}

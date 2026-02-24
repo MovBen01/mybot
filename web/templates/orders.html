@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Заказы{% endblock %}
+{% block page_title %}Заказы{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Все заявки на заказ</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Клиент</th>
+          <th>Товар</th>
+          <th>Цена</th>
+          <th>Статус</th>
+          <th>Дата</th>
+          <th>Действие</th>
+        </tr>
+      </thead>
+      <tbody id="orders-body">
+        <tr><td colspan="7"><div class="spinner"></div></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const STATUS_COLORS = {
+  pending: 'badge-yellow',
+  confirmed: 'badge-cyan',
+  completed: 'badge-green',
+  cancelled: 'badge-red'
+};
+const STATUS_LABELS = {
+  pending: 'Ожидает',
+  confirmed: 'Подтверждён',
+  completed: 'Выполнен',
+  cancelled: 'Отменён'
+};
+
+async function loadOrders() {
+  const orders = await api('/api/orders');
+  const tbody = document.getElementById('orders-body');
+  if (!orders.length) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="icon">◎</div><p>Заказов пока нет</p></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = orders.map(o => `
+    <tr>
+      <td><code>#${o.id}</code></td>
+      <td>
+        <b>${o.full_name || '—'}</b><br>
+        <span style="font-size:11px;color:var(--text3)">@${o.username || '—'} · ID:${o.user_id}</span>
+      </td>
+      <td>${(o.product_name || '—').substring(0, 40)}</td>
+      <td><b style="color:var(--success)">${o.price}₽</b></td>
+      <td>
+        <select onchange="updateStatus(${o.id}, this.value)" style="padding:4px 8px;font-size:11px;width:auto;">
+          ${['pending','confirmed','completed','cancelled'].map(s =>
+            `<option value="${s}" ${s === o.status ? 'selected' : ''}>${STATUS_LABELS[s]}</option>`
+          ).join('')}
+        </select>
+      </td>
+      <td style="color:var(--text3);font-size:11px;">${o.created_at}</td>
+      <td>
+        <a href="tg://user?id=${o.user_id}" class="btn btn-sm">Написать</a>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function updateStatus(id, status) {
+  await api(`/api/orders/${id}/status`, 'POST', { status });
+  toast('✓ Статус обновлён');
+}
+
+loadOrders();
+</script>
+{% endblock %}

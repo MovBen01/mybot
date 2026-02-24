@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Переписки{% endblock %}
+{% block page_title %}Переписки с клиентами{% endblock %}
+
+{% block content %}
+<div class="grid-2" style="gap:16px;align-items:start;">
+  <!-- User list -->
+  <div class="card" style="position:sticky;top:80px;">
+    <div class="card-header">
+      <span class="card-title">Пользователи</span>
+    </div>
+    <div id="user-list" style="max-height:600px;overflow-y:auto;">
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <!-- Chat -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title" id="chat-title">Выберите пользователя</span>
+    </div>
+    <div id="chat-area" style="padding:20px;min-height:300px;max-height:600px;overflow-y:auto;">
+      <div class="empty-state">
+        <div class="icon">◈</div>
+        <p>Выберите пользователя слева<br>чтобы увидеть переписку</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadUsers() {
+  const users = await api('/api/users');
+  const el = document.getElementById('user-list');
+  if (!users.length) {
+    el.innerHTML = '<div class="empty-state"><p>Нет пользователей</p></div>';
+    return;
+  }
+  el.innerHTML = users.map(u => `
+    <div onclick="loadChat(${u.id}, '${(u.full_name || u.username || 'ID:'+u.id).replace(/'/g,"\\'")}', this)"
+         style="padding:12px 16px;cursor:pointer;border-bottom:1px solid var(--border);transition:background 0.1s;"
+         onmouseover="this.style.background='var(--surface2)'"
+         onmouseout="this.style.background=''"
+         class="user-item">
+      <div style="font-size:12px;font-weight:700;">${u.full_name || '—'}</div>
+      <div style="font-size:11px;color:var(--text3);">@${u.username || '—'} · ${u.messages_count || 0} сообщений</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:2px;">${u.last_seen || ''}</div>
+    </div>
+  `).join('');
+}
+
+async function loadChat(userId, name, el) {
+  // Highlight selected
+  document.querySelectorAll('.user-item').forEach(i => i.style.borderLeft = '');
+  el.style.borderLeft = '3px solid var(--accent)';
+  el.style.background = 'var(--surface2)';
+
+  document.getElementById('chat-title').textContent = name;
+  document.getElementById('chat-area').innerHTML = '<div class="spinner"></div>';
+
+  const msgs = await api(`/api/messages?user_id=${userId}`);
+
+  if (!msgs.length) {
+    document.getElementById('chat-area').innerHTML = '<div class="empty-state"><p>Сообщений нет</p></div>';
+    return;
+  }
+
+  const reversed = [...msgs].reverse();
+  document.getElementById('chat-area').innerHTML = reversed.map(m => `
+    <div class="msg-bubble ${m.direction === 'user' ? 'user' : 'bot'}">
+      <div class="meta">${m.direction === 'user' ? '👤 Клиент' : '🤖 Бот'} · ${m.created_at}</div>
+      <div class="text">${m.text || '—'}</div>
+    </div>
+  `).join('');
+
+  // Scroll to bottom
+  const area = document.getElementById('chat-area');
+  area.scrollTop = area.scrollHeight;
+}
+
+loadUsers();
+</script>
+{% endblock %}
