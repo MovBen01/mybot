@@ -63,16 +63,14 @@ def products_keyboard(products, category_id=None):
                  else f"{p['name']} — {p['price_with_markup']}₽",
             callback_data=f"product_{p['id']}"
         )])
-    back = f"cat_{category_id}" if category_id else "categories"
-    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=back)])
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад к категориям", callback_data="categories")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def product_detail_keyboard(product, category_id=None):
-    back = f"cat_{category_id}" if category_id else "catalog"
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📞 Заказать / Узнать детали", callback_data=f"order_{product['id']}")],
-        [InlineKeyboardButton(text="⬅️ Назад к категории", callback_data=back)],
+        [InlineKeyboardButton(text="⬅️ Назад к категориям", callback_data="categories")],
     ])
 
 
