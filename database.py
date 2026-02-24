@@ -5,8 +5,10 @@ import sqlite3
 import json
 import os
 import logging
+import asyncio
 from datetime import datetime
 from typing import Optional, List, Dict, Any
+from functools import partial
 
 from config import config
 
@@ -74,6 +76,10 @@ class Database:
                     status TEXT DEFAULT 'pending',
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 );
+
+                CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id, is_available);
+                CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
+                CREATE INDEX IF NOT EXISTS idx_channel_posts_product ON channel_posts(product_id);
 
                 CREATE TABLE IF NOT EXISTS channel_posts (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -110,6 +110,7 @@ async def cmd_help(message: types.Message):
 @dp.callback_query(F.data == "back_main")
 @dp.callback_query(F.data == "main_menu")
 async def cb_main_menu(callback: types.CallbackQuery):
+    await callback.answer()
     await callback.message.edit_text(
         "Главное меню. Выберите действие:",
         reply_markup=main_keyboard()
@@ -119,6 +120,7 @@ async def cb_main_menu(callback: types.CallbackQuery):
 @dp.callback_query(F.data == "categories")
 @dp.callback_query(F.data == "catalog")
 async def cb_categories(callback: types.CallbackQuery):
+    await callback.answer()
     await callback.message.edit_text(
         "📦 <b>Категории товаров:</b>\n\nВыберите категорию для просмотра:",
         parse_mode="HTML",
@@ -128,15 +130,23 @@ async def cb_categories(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data.startswith("cat_"))
 async def cb_category_products(callback: types.CallbackQuery):
+    await callback.answer()  # сразу убираем "часики" у кнопки
     cat_id = int(callback.data.split("_")[1])
-    cat = db.get_category(cat_id)
-    products = db.get_products_by_category(cat_id)
+    cat, products = await asyncio.gather(
+        asyncio.to_thread(db.get_category, cat_id),
+        asyncio.to_thread(db.get_products_by_category, cat_id)
+    )
 
     if not products:
-        await callback.answer("В этой категории пока нет товаров", show_alert=True)
+        await callback.message.edit_text(
+            "В этой категории пока нет товаров 😔",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="categories")]
+            ])
+        )
         return
 
-    text = f"{'emoji' in cat and cat.get('emoji', '') or ''} <b>{cat['name']}</b>\n\n"
+    text = f"{cat.get('emoji', '📦')} <b>{cat['name']}</b>\n\n"
     text += f"Найдено товаров: {len(products)}\nВыберите товар:"
 
     await callback.message.edit_text(
@@ -148,8 +158,9 @@ async def cb_category_products(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data.startswith("product_"))
 async def cb_product_detail(callback: types.CallbackQuery):
+    await callback.answer()  # сразу убираем "часики"
     product_id = int(callback.data.split("_")[1])
-    product = db.get_product(product_id)
+    product = await asyncio.to_thread(db.get_product, product_id)
 
     if not product:
         await callback.answer("Товар не найден", show_alert=True)
