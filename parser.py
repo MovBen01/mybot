@@ -1,5 +1,5 @@
 """
-Парсер публичного канала @BigSaleApple через t.me/s/
+Парсер @BigSaleApple — постит сводный прайс 3 раза в день
 """
 import asyncio
 import re
@@ -7,6 +7,7 @@ import logging
 import aiohttp
 import ssl
 from bs4 import BeautifulSoup
+from datetime import datetime
 from typing import Optional, List
 
 from config import config
@@ -16,30 +17,27 @@ from product_manager import ProductManager, ChannelPoster
 logger = logging.getLogger(__name__)
 
 SOURCE_CHANNEL = "BigSaleApple"
-
-# Минимальная длина названия товара
 MIN_NAME_LEN = 8
 
-# Слова которые точно НЕ являются названием товара
 GARBAGE_NAMES = [
     'гарантия', 'получите', 'официальный', 'отдел продаж',
     'оптовая', 'гарантийный', 'понедельник', 'суббота',
     'наша вилка', 'замена в сц', 'новинка', 'хит',
 ]
 
-# Паттерн: "Название -89.500" или "Название — 89 500"
 LINE_PRICE_RE = re.compile(
     r'^(.+?)\s*[-–—]\s*([\d]{2,3}[\d\s.,]{1,10})\s*$'
 )
 
-# Паттерн плохого названия — только цвет/характеристика без бренда
-COLOR_ONLY_RE = re.compile(
-    r'^(black|white|silver|gold|blue|red|green|pink|purple|gray|grey|'
-    r'ceramic|amber|jasper|nickel|copper|topaz|plum|velvet|coral|'
-    r'чёрный|белый|серый|синий|красный|зелёный|розовый|золотой|'
-    r'[\w\s/]+\s+\(.*\))\s*$',
-    re.IGNORECASE
-)
+# Время постинга (часы по UTC, UTC+3 = Moscow, поэтому -3)
+# 09:00 МСК = 06:00 UTC, 14:00 МСК = 11:00 UTC, 19:00 МСК = 16:00 UTC
+POST_HOURS_UTC = [6, 11, 13]
+
+# Максимум товаров на одну категорию в сводном посте
+MAX_ITEMS_PER_CATEGORY = 15
+
+# Максимум символов в одном сообщении Telegram
+TG_MSG_LIMIT = 4000
 
 
 class TelegramWebParser:
@@ -52,12 +50,28 @@ class TelegramWebParser:
         self.product_manager = product_manager
 
     async def start_monitoring(self):
-        logger.info(f"Starting web parser for @{SOURCE_CHANNEL}")
-        await self._parse_and_post()
+        logger.info(f"Starting scheduler for @{SOURCE_CHANNEL}")
+        logger.info(f"Will post at UTC hours: {POST_HOURS_UTC} (MSK: {[h+3 for h in POST_HOURS_UTC]})")
+
+        # Сразу парсим и сохраняем в БД (без постинга)
+        await self._fetch_and_save()
+
+        # Планировщик
         while True:
-            await asyncio.sleep(config.PARSE_INTERVAL)
-            logger.info("Running scheduled parse...")
-            await self._parse_and_post()
+            now = datetime.utcnow()
+            current_hour = now.hour
+            current_minute = now.minute
+
+            # Постим в нужные часы в начале часа (0-2 минута)
+            if current_hour in POST_HOURS_UTC and current_minute < 2:
+                logger.info(f"Posting scheduled price list at {now.strftime('%H:%M UTC')}")
+                await self._fetch_and_save()
+                await self._post_price_list()
+                # Ждём 5 минут чтобы не постить дважды в одном часу
+                await asyncio.sleep(300)
+            else:
+                # Проверяем каждую минуту
+                await asyncio.sleep(60)
 
     async def _fetch(self, url: str) -> Optional[str]:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -76,7 +90,6 @@ class TelegramWebParser:
 
     async def _fetch_all_pages(self) -> List[dict]:
         all_posts = []
-
         html = await self._fetch(self.BASE_URL)
         if not html:
             return []
@@ -123,7 +136,6 @@ class TelegramWebParser:
 
     def _parse_price(self, price_str: str) -> Optional[float]:
         cleaned = price_str.strip().replace(' ', '').replace('\xa0', '')
-        # "89.500" → 89500 (точка как разделитель тысяч)
         if '.' in cleaned and len(cleaned.split('.')[-1]) == 3:
             cleaned = cleaned.replace('.', '')
         else:
@@ -137,37 +149,23 @@ class TelegramWebParser:
         return None
 
     def _is_valid_name(self, name: str) -> bool:
-        """Проверяет что название — реальный товар, а не мусор"""
         if len(name) < MIN_NAME_LEN:
             return False
-
         name_lower = name.lower()
-
-        # Фильтр мусорных слов
         if any(g in name_lower for g in GARBAGE_NAMES):
             return False
-
-        # Фильтр телефонных номеров
         if re.search(r'\+7|8\s*\(|@\w', name):
             return False
-
-        # Название должно содержать хотя бы одну латинскую или кириллическую букву
         if not re.search(r'[a-zA-Zа-яА-Я]{2,}', name):
             return False
-
-        # Фильтр строк которые только цвет/вариант без бренда/модели
-        # Название товара обычно содержит бренд или модель
-        has_brand_or_model = re.search(
+        has_brand = re.search(
             r'(apple|iphone|ipad|mac|airpod|watch|dyson|samsung|sony|jbl|'
             r'bowers|oakley|ps5|tab|galaxy|xiaomi|huawei|lenovo|asus|'
             r'серия|series|pro|plus|ultra|max|mini|air|м\d|m\d)',
             name_lower
         )
-
-        # Если нет известного бренда — название должно быть достаточно длинным
-        if not has_brand_or_model and len(name) < 15:
+        if not has_brand and len(name) < 15:
             return False
-
         return True
 
     def _detect_category(self, name: str, post_header: str = '') -> str:
@@ -178,13 +176,13 @@ class TelegramWebParser:
             'iPad':             ['ipad', 'айпад', 'pencil', 'magic keyboard'],
             'Apple Watch':      ['apple watch', 'watch ultra', 'watch series'],
             'AirPods':          ['airpods', 'airpod'],
-            'iMac':             ['imac', 'mac mini', 'mac pro', 'mac studio'],
+            'iMac / Mac':       ['imac', 'mac mini', 'mac pro', 'mac studio'],
             'Аксессуары Apple': ['magic mouse', 'magic trackpad', 'magsafe'],
             'Samsung':          ['samsung', 'galaxy', 'tab s'],
             'Dyson':            ['dyson'],
             'Наушники':         ['bowers', 'beats', 'jbl', 'sony wh', 'jabra'],
             'PlayStation':      ['ps5', 'playstation', 'vr2'],
-            'Очки':             ['oakley', 'meta'],
+            'Очки':             ['oakley', 'meta hstn', 'meta vanguard'],
         }
         for cat_name, keywords in cats.items():
             if any(kw in text for kw in keywords):
@@ -197,7 +195,6 @@ class TelegramWebParser:
         lines = text.split('\n')
         products = []
 
-        # Заголовок поста — первая осмысленная строка
         post_header = ''
         for line in lines[:3]:
             line = line.strip()
@@ -209,33 +206,23 @@ class TelegramWebParser:
             line = line.strip()
             if not line:
                 continue
-
             m = LINE_PRICE_RE.match(line)
             if not m:
                 continue
-
             raw_name = m.group(1).strip()
             raw_price = m.group(2).strip()
-
             price = self._parse_price(raw_price)
             if not price:
                 continue
-
-            # Чистим название от эмодзи и технических символов
             name = re.sub(
                 r'[🔙🔥🆕🇺🇸🇷🇺🇭🇰🇦🇲⬛️\[\]📱💻⌚🎧✏️🖥️🐭🔍]',
                 '', raw_name
             ).strip()
             name = re.sub(r'\s+', ' ', name).strip()
-
-            # Убираем артикулы в начале [MQRN3]
             name = re.sub(r'^\[[\w\d]+\]\s*', '', name)
-
             if not self._is_valid_name(name):
                 continue
-
             category = self._detect_category(name, post_header)
-
             products.append({
                 'source_id': f"web_{msg_id}_{i}",
                 'name': name[:120],
@@ -245,79 +232,111 @@ class TelegramWebParser:
 
         return products
 
-    async def _parse_and_post(self):
+    async def _fetch_and_save(self):
+        """Парсим канал и сохраняем всё в БД"""
         posts = await self._fetch_all_pages()
         logger.info(f"Fetched {len(posts)} posts from @{SOURCE_CHANNEL}")
 
-        all_products = []
+        count = 0
         for post in posts:
             products = self._extract_products_from_post(post)
-            all_products.extend(products)
+            for p in products:
+                markup = config.MARKUP_RULES.get(
+                    p['category'].lower(),
+                    config.MARKUP_RULES.get('default', 12)
+                )
+                cat_id = db.upsert_category(p['category'], markup=markup)
+                db.upsert_product(
+                    source_id=p['source_id'],
+                    name=p['name'],
+                    original_price=p['price'],
+                    category_id=cat_id,
+                )
+                count += 1
 
-        logger.info(f"Extracted {len(all_products)} valid products")
+        logger.info(f"Saved {count} products to DB")
 
-        new_count = 0
-        for p in all_products:
-            markup = config.MARKUP_RULES.get(
-                p['category'].lower(),
-                config.MARKUP_RULES.get('default', 12)
-            )
-            cat_id = db.upsert_category(p['category'], markup=markup)
-            product_id = db.upsert_product(
-                source_id=p['source_id'],
-                name=p['name'],
-                original_price=p['price'],
-                category_id=cat_id,
-            )
-            if not db.is_product_posted(product_id):
-                product = db.get_product(product_id)
-                if product:
-                    success = await self._post_to_channel(product)
-                    if success:
-                        db.save_channel_post(product_id, 0)
-                        new_count += 1
-                        # Задержка чтобы не получить flood ban
-                        await asyncio.sleep(5)
+    async def _post_price_list(self):
+        """Постит сводный прайс по категориям"""
+        products = db.get_all_products()
+        if not products:
+            logger.warning("No products to post")
+            return
 
-        logger.info(f"Posted {new_count} new products to channel")
+        # Группируем по категориям
+        by_category = {}
+        for p in products:
+            cat = p['category_name']
+            if cat not in by_category:
+                by_category[cat] = []
+            by_category[cat].append(p)
 
-    async def _post_to_channel(self, product: dict) -> bool:
-        price_formatted = f"{product['price_with_markup']:,.0f}".replace(',', ' ')
-        text = (
-            f"<b>{product['name']}</b>\n\n"
-            f"💰 <b>Цена: {price_formatted}₽</b>\n"
-            f"📦 {product['category_name']}"
-            f"{config.CHANNEL_SIGNATURE}"
+        now_msk = datetime.utcnow().hour + 3
+        date_str = datetime.utcnow().strftime('%d.%m.%Y')
+
+        # Формируем сообщения (может быть несколько если не влезет)
+        messages = []
+        current_msg = f"🗓 <b>Актуальный прайс на {date_str}</b>\n"
+        current_msg += f"🕐 Обновлено в {now_msk:02d}:00 МСК\n"
+        current_msg += "─" * 28 + "\n\n"
+
+        # Порядок категорий
+        cat_order = [
+            'iPhone', 'MacBook', 'iPad', 'Apple Watch', 'AirPods',
+            'iMac / Mac', 'Аксессуары Apple', 'Samsung', 'Dyson',
+            'PlayStation', 'Наушники', 'Очки', 'Техника'
+        ]
+
+        # Сортируем категории по порядку
+        sorted_cats = sorted(
+            by_category.keys(),
+            key=lambda x: cat_order.index(x) if x in cat_order else 99
         )
-        try:
-            await self.bot.send_message(
-                chat_id=config.MY_CHANNEL_ID,
-                text=text,
-                parse_mode="HTML"
-            )
-            logger.info(f"✅ {product['name']} — {price_formatted}₽")
-            return True
-        except Exception as e:
-            err = str(e)
-            if 'Retry after' in err or 'Too Many Requests' in err:
-                # Извлекаем секунды ожидания и ждём
-                m = re.search(r'retry after (\d+)', err, re.IGNORECASE)
-                wait = int(m.group(1)) + 2 if m else 15
-                logger.warning(f"Flood limit, waiting {wait}s...")
-                await asyncio.sleep(wait)
-                # Пробуем ещё раз
-                try:
-                    await self.bot.send_message(
-                        chat_id=config.MY_CHANNEL_ID,
-                        text=text,
-                        parse_mode="HTML"
-                    )
-                    return True
-                except Exception as e2:
-                    logger.error(f"Retry failed: {e2}")
+
+        cat_emojis = {
+            'iPhone': '📱', 'MacBook': '💻', 'iPad': '📟',
+            'Apple Watch': '⌚', 'AirPods': '🎧', 'iMac / Mac': '🖥',
+            'Аксессуары Apple': '🔌', 'Samsung': '📲', 'Dyson': '🌀',
+            'PlayStation': '🎮', 'Наушники': '🎵', 'Очки': '🕶',
+            'Техника': '⚡',
+        }
+
+        for cat in sorted_cats:
+            items = by_category[cat][:MAX_ITEMS_PER_CATEGORY]
+            emoji = cat_emojis.get(cat, '📦')
+
+            cat_block = f"{emoji} <b>{cat}</b>\n"
+            for item in items:
+                price_fmt = f"{item['price_with_markup']:,.0f}".replace(',', ' ')
+                cat_block += f"• {item['name']} — <b>{price_fmt}₽</b>\n"
+            cat_block += "\n"
+
+            # Если не влезает в текущее сообщение — начинаем новое
+            if len(current_msg) + len(cat_block) > TG_MSG_LIMIT:
+                messages.append(current_msg)
+                current_msg = cat_block
             else:
-                logger.error(f"Post error: {e}")
-            return False
+                current_msg += cat_block
+
+        # Последнее сообщение
+        if current_msg.strip():
+            current_msg += f"\n{config.CHANNEL_SIGNATURE.strip()}"
+            messages.append(current_msg)
+
+        # Постим все части
+        logger.info(f"Posting price list in {len(messages)} message(s)")
+        for i, msg in enumerate(messages):
+            try:
+                await self.bot.send_message(
+                    chat_id=config.MY_CHANNEL_ID,
+                    text=msg,
+                    parse_mode="HTML"
+                )
+                logger.info(f"✅ Posted part {i+1}/{len(messages)}")
+                if i < len(messages) - 1:
+                    await asyncio.sleep(3)
+            except Exception as e:
+                logger.error(f"Error posting part {i+1}: {e}")
 
 
 class TelegramParser(TelegramWebParser):
