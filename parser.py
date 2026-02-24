@@ -1,7 +1,5 @@
 """
 Парсер публичного канала @BigSaleApple через t.me/s/
-Формат постов: прайс-листы, одна строка = один товар
-Пример: "iPhone 16 128GB Black -89.500"
 """
 import asyncio
 import re
@@ -19,16 +17,34 @@ logger = logging.getLogger(__name__)
 
 SOURCE_CHANNEL = "BigSaleApple"
 
+# Минимальная длина названия товара
+MIN_NAME_LEN = 8
+
+# Слова которые точно НЕ являются названием товара
+GARBAGE_NAMES = [
+    'гарантия', 'получите', 'официальный', 'отдел продаж',
+    'оптовая', 'гарантийный', 'понедельник', 'суббота',
+    'наша вилка', 'замена в сц', 'новинка', 'хит',
+]
+
+# Паттерн: "Название -89.500" или "Название — 89 500"
+LINE_PRICE_RE = re.compile(
+    r'^(.+?)\s*[-–—]\s*([\d]{2,3}[\d\s.,]{1,10})\s*$'
+)
+
+# Паттерн плохого названия — только цвет/характеристика без бренда
+COLOR_ONLY_RE = re.compile(
+    r'^(black|white|silver|gold|blue|red|green|pink|purple|gray|grey|'
+    r'ceramic|amber|jasper|nickel|copper|topaz|plum|velvet|coral|'
+    r'чёрный|белый|серый|синий|красный|зелёный|розовый|золотой|'
+    r'[\w\s/]+\s+\(.*\))\s*$',
+    re.IGNORECASE
+)
+
 
 class TelegramWebParser:
 
     BASE_URL = f"https://t.me/s/{SOURCE_CHANNEL}"
-
-    # Паттерн цены: "Название товара -89.500" или "Название -89 500"
-    # Цена идёт после тире в конце строки
-    LINE_PRICE_RE = re.compile(
-        r'^(.+?)\s*[-–—]\s*([\d]{2,3}[\d\s.,]{1,10})\s*$'
-    )
 
     def __init__(self, bot, channel_poster: ChannelPoster, product_manager: ProductManager):
         self.bot = bot
@@ -59,20 +75,16 @@ class TelegramWebParser:
         return None
 
     async def _fetch_all_pages(self) -> List[dict]:
-        """Загружает несколько страниц канала"""
         all_posts = []
 
-        # Первая страница
         html = await self._fetch(self.BASE_URL)
         if not html:
             return []
 
         soup = BeautifulSoup(html, 'html.parser')
         wraps = soup.find_all('div', class_='tgme_widget_message_wrap')
-        posts_page1 = self._extract_raw_posts(wraps)
-        all_posts = posts_page1 + all_posts
+        all_posts = self._extract_raw_posts(wraps) + all_posts
 
-        # Листаем назад ещё 3 страницы
         before_id = None
         if wraps:
             first = wraps[0].find('div', class_='tgme_widget_message')
@@ -89,8 +101,7 @@ class TelegramWebParser:
             wraps2 = soup2.find_all('div', class_='tgme_widget_message_wrap')
             if not wraps2:
                 break
-            older = self._extract_raw_posts(wraps2)
-            all_posts = older + all_posts
+            all_posts = self._extract_raw_posts(wraps2) + all_posts
             first2 = wraps2[0].find('div', class_='tgme_widget_message')
             if first2:
                 before_id = first2.get('data-post', '').split('/')[-1]
@@ -103,99 +114,131 @@ class TelegramWebParser:
         posts = []
         for wrap in wraps:
             msg_div = wrap.find('div', class_='tgme_widget_message')
-            msg_id = '0'
-            if msg_div:
-                msg_id = msg_div.get('data-post', '').split('/')[-1]
-
+            msg_id = msg_div.get('data-post', '').split('/')[-1] if msg_div else '0'
             text_el = wrap.find('div', class_='tgme_widget_message_text')
             text = text_el.get_text('\n', strip=True) if text_el else ''
-
             if text:
                 posts.append({'msg_id': msg_id, 'text': text})
         return posts
 
     def _parse_price(self, price_str: str) -> Optional[float]:
-        """Парсит строку цены: '89.500' или '89 500' → 89500.0"""
-        # Убираем пробелы-разделители тысяч и заменяем точку-разделитель
         cleaned = price_str.strip().replace(' ', '').replace('\xa0', '')
-        # Формат 89.500 → это 89500 (точка как разделитель тысяч)
+        # "89.500" → 89500 (точка как разделитель тысяч)
         if '.' in cleaned and len(cleaned.split('.')[-1]) == 3:
             cleaned = cleaned.replace('.', '')
         else:
             cleaned = cleaned.replace('.', '').replace(',', '')
         try:
             val = float(cleaned)
-            if 500 <= val <= 1_000_000:  # фильтр: реальные цены на Apple
+            if 500 <= val <= 2_000_000:
                 return val
         except ValueError:
             pass
         return None
 
-    def _detect_category(self, name: str) -> str:
+    def _is_valid_name(self, name: str) -> bool:
+        """Проверяет что название — реальный товар, а не мусор"""
+        if len(name) < MIN_NAME_LEN:
+            return False
+
         name_lower = name.lower()
+
+        # Фильтр мусорных слов
+        if any(g in name_lower for g in GARBAGE_NAMES):
+            return False
+
+        # Фильтр телефонных номеров
+        if re.search(r'\+7|8\s*\(|@\w', name):
+            return False
+
+        # Название должно содержать хотя бы одну латинскую или кириллическую букву
+        if not re.search(r'[a-zA-Zа-яА-Я]{2,}', name):
+            return False
+
+        # Фильтр строк которые только цвет/вариант без бренда/модели
+        # Название товара обычно содержит бренд или модель
+        has_brand_or_model = re.search(
+            r'(apple|iphone|ipad|mac|airpod|watch|dyson|samsung|sony|jbl|'
+            r'bowers|oakley|ps5|tab|galaxy|xiaomi|huawei|lenovo|asus|'
+            r'серия|series|pro|plus|ultra|max|mini|air|м\d|m\d)',
+            name_lower
+        )
+
+        # Если нет известного бренда — название должно быть достаточно длинным
+        if not has_brand_or_model and len(name) < 15:
+            return False
+
+        return True
+
+    def _detect_category(self, name: str, post_header: str = '') -> str:
+        text = (name + ' ' + post_header).lower()
         cats = {
-            'iPhone': ['iphone', 'айфон'],
-            'MacBook': ['macbook', 'макбук'],
-            'iPad': ['ipad', 'айпад', 'pencil', 'magic keyboard'],
-            'Apple Watch': ['watch ultra', 'watch series', 'apple watch'],
-            'AirPods': ['airpods', 'airpod'],
-            'iMac': ['imac', 'mac mini', 'mac pro', 'mac studio', 'apple display'],
-            'Аксессуары Apple': ['magic mouse', 'magic trackpad', 'magsafe',
-                                  'зарядка', 'кабель', 'чехол'],
-            'Наушники': ['bowers', 'beats', 'наушники', 'sony', 'jabra'],
+            'iPhone':           ['iphone', 'айфон'],
+            'MacBook':          ['macbook', 'макбук'],
+            'iPad':             ['ipad', 'айпад', 'pencil', 'magic keyboard'],
+            'Apple Watch':      ['apple watch', 'watch ultra', 'watch series'],
+            'AirPods':          ['airpods', 'airpod'],
+            'iMac':             ['imac', 'mac mini', 'mac pro', 'mac studio'],
+            'Аксессуары Apple': ['magic mouse', 'magic trackpad', 'magsafe'],
+            'Samsung':          ['samsung', 'galaxy', 'tab s'],
+            'Dyson':            ['dyson'],
+            'Наушники':         ['bowers', 'beats', 'jbl', 'sony wh', 'jabra'],
+            'PlayStation':      ['ps5', 'playstation', 'vr2'],
+            'Очки':             ['oakley', 'meta'],
         }
         for cat_name, keywords in cats.items():
-            if any(kw in name_lower for kw in keywords):
+            if any(kw in text for kw in keywords):
                 return cat_name
-        return 'Apple техника'
+        return 'Техника'
 
     def _extract_products_from_post(self, post: dict) -> List[dict]:
-        """Разбирает один пост на список товаров"""
         text = post['text']
         msg_id = post['msg_id']
         lines = text.split('\n')
         products = []
 
-        # Определяем категорию поста по первой строке (заголовок)
-        post_category = None
-        first_meaningful = next((l.strip() for l in lines if len(l.strip()) > 2
-                                  and not re.match(r'^\d{2}/\d{2}/\d{4}$', l.strip())), '')
-        if first_meaningful:
-            post_category = self._detect_category(first_meaningful)
+        # Заголовок поста — первая осмысленная строка
+        post_header = ''
+        for line in lines[:3]:
+            line = line.strip()
+            if len(line) > 3 and not re.match(r'^\d{2}/\d{2}/\d{4}$', line):
+                post_header = line
+                break
 
         for i, line in enumerate(lines):
             line = line.strip()
-            if not line or len(line) < 5:
+            if not line:
                 continue
 
-            # Ищем строки вида "Название товара -89.500"
-            m = self.LINE_PRICE_RE.match(line)
+            m = LINE_PRICE_RE.match(line)
             if not m:
                 continue
 
             raw_name = m.group(1).strip()
             raw_price = m.group(2).strip()
 
-            # Фильтруем мусор
             price = self._parse_price(raw_price)
             if not price:
                 continue
 
-            # Убираем из названия эмодзи-мусор и технические символы
-            name = re.sub(r'[🔙🔥🆕🇺🇸🇷🇺🇭🇰⬛️\[\]]', '', raw_name).strip()
+            # Чистим название от эмодзи и технических символов
+            name = re.sub(
+                r'[🔙🔥🆕🇺🇸🇷🇺🇭🇰🇦🇲⬛️\[\]📱💻⌚🎧✏️🖥️🐭🔍]',
+                '', raw_name
+            ).strip()
             name = re.sub(r'\s+', ' ', name).strip()
 
-            if len(name) < 4:
+            # Убираем артикулы в начале [MQRN3]
+            name = re.sub(r'^\[[\w\d]+\]\s*', '', name)
+
+            if not self._is_valid_name(name):
                 continue
 
-            # Категория из названия или из заголовка поста
-            category = self._detect_category(name)
-            if category == 'Apple техника' and post_category:
-                category = post_category
+            category = self._detect_category(name, post_header)
 
             products.append({
                 'source_id': f"web_{msg_id}_{i}",
-                'name': name,
+                'name': name[:120],
                 'price': price,
                 'category': category,
             })
@@ -211,13 +254,13 @@ class TelegramWebParser:
             products = self._extract_products_from_post(post)
             all_products.extend(products)
 
-        logger.info(f"Extracted {len(all_products)} products total")
+        logger.info(f"Extracted {len(all_products)} valid products")
 
         new_count = 0
         for p in all_products:
             markup = config.MARKUP_RULES.get(
                 p['category'].lower(),
-                config.MARKUP_RULES.get('default', 15)
+                config.MARKUP_RULES.get('default', 12)
             )
             cat_id = db.upsert_category(p['category'], markup=markup)
             product_id = db.upsert_product(
@@ -229,18 +272,20 @@ class TelegramWebParser:
             if not db.is_product_posted(product_id):
                 product = db.get_product(product_id)
                 if product:
-                    await asyncio.sleep(2)
                     success = await self._post_to_channel(product)
                     if success:
                         db.save_channel_post(product_id, 0)
                         new_count += 1
+                        # Задержка чтобы не получить flood ban
+                        await asyncio.sleep(5)
 
         logger.info(f"Posted {new_count} new products to channel")
 
     async def _post_to_channel(self, product: dict) -> bool:
+        price_formatted = f"{product['price_with_markup']:,.0f}".replace(',', ' ')
         text = (
             f"<b>{product['name']}</b>\n\n"
-            f"💰 <b>Цена: {product['price_with_markup']:,.0f}₽</b>\n"
+            f"💰 <b>Цена: {price_formatted}₽</b>\n"
             f"📦 {product['category_name']}"
             f"{config.CHANNEL_SIGNATURE}"
         )
@@ -250,10 +295,28 @@ class TelegramWebParser:
                 text=text,
                 parse_mode="HTML"
             )
-            logger.info(f"✅ Posted: {product['name']} — {product['price_with_markup']}₽")
+            logger.info(f"✅ {product['name']} — {price_formatted}₽")
             return True
         except Exception as e:
-            logger.error(f"Post error: {e}")
+            err = str(e)
+            if 'Retry after' in err or 'Too Many Requests' in err:
+                # Извлекаем секунды ожидания и ждём
+                m = re.search(r'retry after (\d+)', err, re.IGNORECASE)
+                wait = int(m.group(1)) + 2 if m else 15
+                logger.warning(f"Flood limit, waiting {wait}s...")
+                await asyncio.sleep(wait)
+                # Пробуем ещё раз
+                try:
+                    await self.bot.send_message(
+                        chat_id=config.MY_CHANNEL_ID,
+                        text=text,
+                        parse_mode="HTML"
+                    )
+                    return True
+                except Exception as e2:
+                    logger.error(f"Retry failed: {e2}")
+            else:
+                logger.error(f"Post error: {e}")
             return False
 
 
@@ -265,7 +328,7 @@ class ManualParser:
     @staticmethod
     def add_product(name: str, price: float, category: str,
                     description: str = None, photo_id: str = None) -> int:
-        markup = config.MARKUP_RULES.get(category.lower(), config.MARKUP_RULES.get('default', 15))
+        markup = config.MARKUP_RULES.get(category.lower(), config.MARKUP_RULES.get('default', 12))
         cat_id = db.upsert_category(category, markup=markup)
         return db.upsert_product(
             source_id=f"manual_{name[:20]}_{price}",
