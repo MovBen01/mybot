@@ -429,3 +429,14 @@ async def cmd_post_now(message: types.Message):
         await message.answer("✅ Прайс-лист опубликован в канал!")
     except Exception as e:
         await message.answer(f"❌ Ошибка: {e}")
+
+
+@admin_router.message(Command("whoami"))
+async def cmd_whoami(message: types.Message):
+    """Показывает твой ID — для отладки"""
+    await message.answer(
+        f"👤 Твой ID: <code>{message.from_user.id}</code>\n"
+        f"🔐 Ты админ: {'✅ Да' if is_admin(message.from_user.id) else '❌ Нет'}\n"
+        f"📋 ADMIN_IDS в конфиге: <code>{config.ADMIN_IDS}</code>",
+        parse_mode="HTML"
+    )
