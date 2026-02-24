@@ -423,7 +423,11 @@ async def cmd_post_now(message: types.Message):
     try:
         from bot import bot as main_bot, channel_poster as main_poster, product_manager as pm
         from parser import TelegramWebParser
-        parser = TelegramWebParser(main_bot, main_poster, pm)
+        # Создаём парсер без роутера — просто для вызова методов
+        parser = TelegramWebParser.__new__(TelegramWebParser)
+        parser.bot = main_bot
+        parser.channel_poster = main_poster
+        parser.product_manager = pm
         await parser._fetch_and_save()
         await parser._post_price_list()
         await message.answer("✅ Прайс-лист опубликован в канал!")
