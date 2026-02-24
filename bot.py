@@ -17,6 +17,7 @@ from database import db
 from product_manager import ProductManager, ChannelPoster
 from parser import TelegramParser
 from admin import admin_router
+import runner
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -309,8 +310,9 @@ async def handle_user_message(message: types.Message):
     )
 
 
-# Глобальный парсер — доступен из admin.py
+# Глобальный парсер — регистрируем в runner.py
 parser = TelegramParser(bot, channel_poster, product_manager)
+runner.set_parser(parser)
 
 
 async def main():

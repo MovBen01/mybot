@@ -421,7 +421,11 @@ async def cmd_post_now(message: types.Message):
         return
     await message.answer("⏳ Парсю канал и готовлю прайс-лист...")
     try:
-        from bot import parser
+        import runner
+        parser = runner.get_parser()
+        if not parser:
+            await message.answer("❌ Парсер не инициализирован, попробуй позже")
+            return
         await parser._fetch_and_save()
         await parser._post_price_list()
         await message.answer("✅ Прайс-лист опубликован в канал!")
