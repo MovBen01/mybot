@@ -472,16 +472,19 @@ async def cb_order(callback: types.CallbackQuery):
         f"📂 {product['category_name'] if product else '—'}\n"
         f"{'─' * 28}"
     )
+    # Кнопка для связи с клиентом
+    if user.username:
+        reply_kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text=f"💬 Написать @{user.username}", url=f"https://t.me/{user.username}")
+        ]])
+    else:
+        reply_kb = None  # без кнопки если нет username
+
     for admin_id in config.ADMIN_IDS:
         try:
             await bot.send_message(
                 admin_id, order_text, parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(
-                        text=f"💬 Написать @{user.username or user.id}",
-                        url=f"tg://user?id={user.id}"
-                    )]
-                ])
+                reply_markup=reply_kb
             )
             logger.info(f"Order notification sent to admin {admin_id}")
         except Exception as e:
