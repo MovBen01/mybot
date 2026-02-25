@@ -481,8 +481,10 @@ async def adm_dialog(callback: types.CallbackQuery):
     """Показывает переписку с конкретным пользователем"""
     if not is_admin(callback.from_user.id):
         return
+    await callback.answer()
 
-    user_id = int(callback.data.split("_")[2])
+    # adm_dialog_451636499 → берём всё после "adm_dialog_"
+    user_id = int(callback.data[len("adm_dialog_"):])
     msgs = db.get_user_messages(user_id, limit=30)
 
     # Информация о пользователе

@@ -466,10 +466,16 @@ async def cb_order(callback: types.CallbackQuery):
         try:
             await bot.send_message(
                 admin_id, order_text, parse_mode="HTML",
-                reply_markup=admin_reply_keyboard(user.id, user.username)
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(
+                        text=f"💬 Написать @{user.username or user.id}",
+                        url=f"tg://user?id={user.id}"
+                    )]
+                ])
             )
+            logger.info(f"Order notification sent to admin {admin_id}")
         except Exception as e:
-            logger.error(f"Cannot notify admin {admin_id}: {e}")
+            logger.error(f"Cannot notify admin {admin_id}: {e}", exc_info=True)
 
     if product:
         await db.save_order(user.id, product_id, product['price_with_markup'])
