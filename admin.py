@@ -50,13 +50,14 @@ class AdminStates(StatesGroup):
 
 def admin_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ Добавить товар", callback_data="adm_add_product")],
-        [InlineKeyboardButton(text="📊 Статистика", callback_data="adm_stats")],
-        [InlineKeyboardButton(text="💬 Последние сообщения", callback_data="adm_messages")],
-        [InlineKeyboardButton(text="🛒 Заказы", callback_data="adm_orders")],
-        [InlineKeyboardButton(text="🏷️ Изменить наценки", callback_data="adm_markups")],
-        [InlineKeyboardButton(text="📢 Опубликовать все товары", callback_data="adm_post_all")],
-        [InlineKeyboardButton(text="📣 Рассылка", callback_data="adm_broadcast")],
+        [InlineKeyboardButton(text="➕ Добавить товар",        callback_data="adm_add_product")],
+        [InlineKeyboardButton(text="📊 Статистика",             callback_data="adm_stats")],
+        [InlineKeyboardButton(text="👥 Переписки клиентов",     callback_data="adm_users_list")],
+        [InlineKeyboardButton(text="💬 Последние сообщения",    callback_data="adm_messages")],
+        [InlineKeyboardButton(text="🛒 Заказы",                 callback_data="adm_orders")],
+        [InlineKeyboardButton(text="🏷️ Изменить наценки",      callback_data="adm_markups")],
+        [InlineKeyboardButton(text="📢 Опубликовать прайс",     callback_data="adm_post_all")],
+        [InlineKeyboardButton(text="📣 Рассылка",               callback_data="adm_broadcast")],
     ])
 
 
@@ -442,3 +443,109 @@ async def cmd_whoami(message: types.Message):
         f"📋 ADMIN_IDS в конфиге: <code>{config.ADMIN_IDS}</code>",
         parse_mode="HTML"
     )
+
+
+# ---- ПРОСМОТР ПЕРЕПИСОК ----
+
+@admin_router.message(Command("chats"))
+async def cmd_chats(message: types.Message):
+    """Список всех пользователей с кнопкой открыть диалог"""
+    if not is_admin(message.from_user.id):
+        return
+
+    users = db.get_all_users()
+    if not users:
+        await message.answer("Пользователей пока нет.")
+        return
+
+    text = f"👥 <b>Пользователи бота ({len(users)})</b>\n\n"
+    buttons = []
+
+    for u in users[:20]:
+        name = u.get('full_name') or u.get('username') or f"ID:{u['id']}"
+        uname = f"@{u['username']}" if u['username'] else f"<code>{u['id']}</code>"
+        msgs = u.get('messages_count', 0)
+        text += f"• {name} {uname} — {msgs} сообщ.\n"
+        buttons.append([InlineKeyboardButton(
+            text=f"💬 {name[:25]}",
+            callback_data=f"adm_dialog_{u['id']}"
+        )])
+
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="adm_back")])
+    await message.answer(text, parse_mode="HTML",
+                         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+
+
+@admin_router.callback_query(F.data.startswith("adm_dialog_"))
+async def adm_dialog(callback: types.CallbackQuery):
+    """Показывает переписку с конкретным пользователем"""
+    if not is_admin(callback.from_user.id):
+        return
+
+    user_id = int(callback.data.split("_")[2])
+    msgs = db.get_user_messages(user_id, limit=30)
+
+    # Информация о пользователе
+    users = db.get_all_users()
+    user = next((u for u in users if u['id'] == user_id), None)
+    name = user.get('full_name', '') if user else ''
+    username = user.get('username', '') if user else ''
+
+    if not msgs:
+        await callback.answer("Сообщений нет", show_alert=True)
+        return
+
+    text = (
+        f"💬 <b>Диалог с {name}</b>"
+        f"{f' (@{username})' if username else ''}\n"
+        f"🆔 <code>{user_id}</code>\n"
+        f"{'─' * 28}\n\n"
+    )
+
+    for msg in reversed(msgs[:25]):
+        direction = "👤" if msg['direction'] == 'user' else "🤖"
+        time = str(msg['created_at'])[11:16]  # HH:MM
+        content = msg['text'] or '[медиа]'
+        # Убираем служебные пометки
+        if content.startswith('[AI]'):
+            content = '🤖 ' + content[5:]
+        elif content.startswith('[SEARCH]'):
+            content = '🔍 ' + content[9:]
+        elif content.startswith('[ORDER]'):
+            content = '🛒 ' + content[8:]
+        text += f"{direction} <i>{time}</i>  {content[:100]}\n"
+
+    await callback.message.answer(
+        text, parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text=f"✍️ Написать {name or username or user_id}",
+                url=f"tg://user?id={user_id}"
+            )],
+            [InlineKeyboardButton(text="👥 Все пользователи", callback_data="adm_users_list")],
+        ])
+    )
+    await callback.answer()
+
+
+@admin_router.callback_query(F.data == "adm_users_list")
+async def adm_users_list(callback: types.CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        return
+
+    users = db.get_all_users()
+    buttons = []
+    for u in users[:20]:
+        name = u.get('full_name') or u.get('username') or f"ID:{u['id']}"
+        buttons.append([InlineKeyboardButton(
+            text=f"💬 {name[:30]}",
+            callback_data=f"adm_dialog_{u['id']}"
+        )])
+    buttons.append([InlineKeyboardButton(text="⬅️ Панель", callback_data="adm_back")])
+
+    await callback.message.edit_text(
+        f"👥 <b>Выберите пользователя:</b>",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+    await callback.answer()
