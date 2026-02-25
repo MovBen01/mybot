@@ -219,6 +219,18 @@ class Database:
             """).fetchall()
             return [dict(r) for r in rows]
 
+    def get_user_orders(self, user_id: int) -> List[Dict]:
+        with self._conn() as conn:
+            rows = conn.execute("""
+                SELECT o.*, p.name as product_name
+                FROM orders o
+                LEFT JOIN products p ON o.product_id = p.id
+                WHERE o.user_id = ?
+                ORDER BY o.created_at DESC
+                LIMIT 20
+            """, (user_id,)).fetchall()
+            return [dict(r) for r in rows]
+
     # ---- ПОЛЬЗОВАТЕЛИ ----
 
     async def save_user(self, user_id: int, username: str = None, full_name: str = None):
