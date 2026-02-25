@@ -521,8 +521,9 @@ async def adm_dialog(callback: types.CallbackQuery):
         text, parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(
-                text=f"✍️ Написать {name or username or user_id}",
-                url=f"tg://user?id={user_id}"
+                text=f"✍️ Написать @{username}" if username else f"👤 ID: {user_id}",
+                url=f"https://t.me/{username}" if username else None,
+                callback_data=None if username else "noop"
             )],
             [InlineKeyboardButton(text="👥 Все пользователи", callback_data="adm_users_list")],
         ])

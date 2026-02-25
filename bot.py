@@ -110,12 +110,22 @@ def product_detail_keyboard(product, cat_id, page):
 
 
 def admin_reply_keyboard(user_id, username):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text=f"💬 Написать @{username or user_id}",
-            url=f"tg://user?id={user_id}"
-        )],
-    ])
+    if username:
+        # Есть username — ссылка работает всегда
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text=f"💬 Написать @{username}",
+                url=f"https://t.me/{username}"
+            )],
+        ])
+    else:
+        # Нет username — кнопка без ссылки (просто текст с ID)
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text=f"👤 ID: {user_id} (нет username)",
+                callback_data="noop"
+            )],
+        ])
 
 
 # ─────────────────────────────────────────────
