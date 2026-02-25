@@ -39,9 +39,11 @@ ITEMS_PER_PAGE = 10
 # ─────────────────────────────────────────────
 
 class UserState(StatesGroup):
-    search      = State()   # ждём поисковый запрос
-    ai_chat     = State()   # чат с ИИ консультантом
-    contact_msg = State()   # ждём сообщение для менеджера
+    search           = State()
+    ai_chat          = State()
+    contact_msg      = State()
+    waiting_contact  = State()
+    waiting_username = State()  # ждём username если не установлен
 
 
 # ─────────────────────────────────────────────
@@ -454,52 +456,140 @@ async def process_search(message: types.Message, state: FSMContext):
 # ─────────────────────────────────────────────
 
 @dp.callback_query(F.data.startswith("order_"))
-async def cb_order(callback: types.CallbackQuery):
+async def cb_order(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     product_id = int(callback.data.split("_")[1])
-    product    = await asyncio.to_thread(db.get_product, product_id)
-    user       = callback.from_user
-    price      = f"{product['price_with_markup']:,.0f}".replace(',', ' ') if product else "—"
+    product = await asyncio.to_thread(db.get_product, product_id)
+    user = callback.from_user
 
-    # Уведомление администратору
-    order_text = (
-        f"🛒 <b>НОВЫЙ ЗАКАЗ!</b>\n"
-        f"{'─' * 28}\n"
-        f"👤 {user.full_name}\n"
-        f"🆔 <code>{user.id}</code>  •  @{user.username or '—'}\n\n"
-        f"📦 <b>{product['name'] if product else '—'}</b>\n"
-        f"💰 {price} ₽\n"
-        f"📂 {product['category_name'] if product else '—'}\n"
-        f"{'─' * 28}"
-    )
-    # Кнопка для связи с клиентом
+    price = f"{int(product['price_with_markup']):,}".replace(",", " ") + " руб" if product else ""
+    pname = product["name"] if product else ""
+
+    # Если username уже есть — сразу оформляем, просим только телефон
     if user.username:
+        await state.set_state(UserState.waiting_contact)
+        await state.update_data(order_product_id=product_id)
+        await callback.message.answer(
+            pname + "\n" + price + "\n\n"
+            "Нажмите кнопку ниже чтобы поделиться номером телефона — менеджер свяжется с вами.",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text="Поделиться номером", request_contact=True)]],
+                resize_keyboard=True, one_time_keyboard=True
+            )
+        )
+    else:
+        # Нет username — просим установить его или ввести вручную
+        await state.set_state(UserState.waiting_username)
+        await state.update_data(order_product_id=product_id)
+        await callback.message.answer(
+            "Для оформления заказа необходим username в Telegram.\n\n"
+            "У вас не установлен username. Пожалуйста:\n"
+            "1. Зайдите в Настройки Telegram\n"
+            "2. Нажмите на своё имя\n"
+            "3. Установите имя пользователя (username)\n"
+            "4. Вернитесь и напишите свой @username здесь\n\n"
+            "Или напишите @username прямо сейчас если уже установили:",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text="Отмена")]],
+                resize_keyboard=True, one_time_keyboard=True
+            )
+        )
+
+
+@dp.message(UserState.waiting_username)
+async def order_username_received(message: types.Message, state: FSMContext):
+    if not message.text:
+        return
+    if message.text == "Отмена":
+        await state.clear()
+        await message.answer("Заказ отменён.", reply_markup=main_reply_keyboard())
+        return
+
+    text = message.text.strip().lstrip("@")
+    if len(text) < 3:
+        await message.answer(
+            "Username должен быть не менее 3 символов. Попробуйте ещё раз:",
+        )
+        return
+
+    # Сохраняем введённый username и просим телефон
+    await state.update_data(manual_username=text)
+    await state.set_state(UserState.waiting_contact)
+    await message.answer(
+        "Отлично! Теперь поделитесь номером телефона:",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text="Поделиться номером", request_contact=True)]],
+            resize_keyboard=True, one_time_keyboard=True
+        )
+    )
+
+
+@dp.message(UserState.waiting_contact, F.contact)
+async def order_contact_received(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    product_id = data.get("order_product_id")
+    manual_username = data.get("manual_username")
+    await state.clear()
+
+    product = await asyncio.to_thread(db.get_product, product_id)
+    user = message.from_user
+    phone = message.contact.phone_number if message.contact else "none"
+    price = f"{int(product['price_with_markup']):,}".replace(",", " ") + " руб" if product else ""
+    username = user.username or manual_username or ""
+    uname = ("  @" + username) if username else ""
+    pname = product["name"] if product else ""
+    pcategory = product["category_name"] if product else ""
+
+    order_lines = [
+        "НОВЫЙ ЗАКАЗ",
+        "Клиент: " + (user.full_name or ""),
+        "Телефон: " + phone,
+        "ID: " + str(user.id) + uname,
+        "",
+        "Товар: " + pname,
+        "Цена: " + price,
+        "Категория: " + pcategory,
+    ]
+    order_text = "\n".join(order_lines)
+
+    if username:
         reply_kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text=f"💬 Написать @{user.username}", url=f"https://t.me/{user.username}")
+            InlineKeyboardButton(text="Написать @" + username, url="https://t.me/" + username)
         ]])
     else:
-        reply_kb = None  # без кнопки если нет username
+        reply_kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Позвонить: " + phone, url="tel:" + phone)
+        ]])
 
     for admin_id in config.ADMIN_IDS:
         try:
-            await bot.send_message(
-                admin_id, order_text, parse_mode="HTML",
-                reply_markup=reply_kb
-            )
-            logger.info(f"Order notification sent to admin {admin_id}")
+            await bot.send_message(admin_id, order_text, reply_markup=reply_kb)
+            logger.info("Order sent to admin " + str(admin_id))
         except Exception as e:
-            logger.error(f"Cannot notify admin {admin_id}: {e}", exc_info=True)
+            logger.error("Notify error: " + str(e), exc_info=True)
 
     if product:
-        await db.save_order(user.id, product_id, product['price_with_markup'])
-    await db.log_message(user.id, f"[ORDER] {product['name'] if product else product_id}", "user")
+        await db.save_order(user.id, product_id, product["price_with_markup"])
+    await db.log_message(user.id, "ORDER: " + pname, "user")
 
-    await callback.message.answer(
-        "✅ <b>Заявка принята!</b>\n\n"
-        "Менеджер свяжется с вами в ближайшее время. 🤝\n"
-        "<i>Обычно отвечаем в течение 1–2 часов.</i>",
-        parse_mode="HTML",
+    await message.answer(
+        "Заявка принята! Менеджер свяжется с вами в ближайшее время.",
         reply_markup=main_reply_keyboard()
+    )
+
+
+@dp.message(UserState.waiting_contact)
+async def order_contact_skip(message: types.Message, state: FSMContext):
+    if message.text and message.text.startswith("/"):
+        await state.clear()
+        await message.answer("Заказ отменён.", reply_markup=main_reply_keyboard())
+        return
+    await message.answer(
+        "Нажмите кнопку Поделиться номером ниже.",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text="Поделиться номером", request_contact=True)]],
+            resize_keyboard=True, one_time_keyboard=True
+        )
     )
 
 
